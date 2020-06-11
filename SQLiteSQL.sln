@@ -1,0 +1,18 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 2012
+# Clarion 2.1.0.2447
+Project("{12B76EC0-1D7B-4FA7-A7D0-C524288B48A1}") = "SQLiteSQL", "SQLiteSQL.cwproj", "{BC1935A2-A025-4534-8CC3-6636F410AE88}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Win32 = Debug|Win32
+		Release|Win32 = Release|Win32
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{BC1935A2-A025-4534-8CC3-6636F410AE88}.Debug|Win32.Build.0 = Debug|Win32
+		{BC1935A2-A025-4534-8CC3-6636F410AE88}.Debug|Win32.ActiveCfg = Debug|Win32
+		{BC1935A2-A025-4534-8CC3-6636F410AE88}.Release|Win32.Build.0 = Release|Win32
+		{BC1935A2-A025-4534-8CC3-6636F410AE88}.Release|Win32.ActiveCfg = Release|Win32
+	EndGlobalSection
+EndGlobal
