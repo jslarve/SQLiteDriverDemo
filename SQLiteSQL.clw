@@ -165,7 +165,7 @@ InvalidateWindow        PROCEDURE                       !calls invalidaterect to
         
         OPEN(Window)
         0{PROP:Hide} = TRUE
-        SQLQueryText = 'SELECT slang FROM mem.Data WHERE slang LIKE("%data%")' !Now we'll filter a subset of rows.
+        SQLQueryText = 'SELECT * FROM mem.Data WHERE slang LIKE("%data%")' !Now we'll filter a subset of rows.
         ACCEPT
             CASE EVENT()
             OF EVENT:AlertKey
