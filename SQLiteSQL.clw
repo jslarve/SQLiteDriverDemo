@@ -1,11 +1,12 @@
-    PROGRAM
+                    PROGRAM
+
+!Updated 2020.06.12 - Used PRAGMA table_info to get the column information instead of parsing the create() statement. Added an option to include data type.
 
     INCLUDE('KEYCODES.CLW'),ONCE
     INCLUDE('SystemString.inc'),ONCE   
 
 SS                  SystemStringClass  !Note. I normally use StringTheory in development, but wanted non-StringTheory users to be able to test this out.
 ClipboardSS         SystemStringClass
-SS2                 &SystemStringClass !For managing Split SS
 
     OMIT('***')
  * Created with Clarion 11.0
@@ -82,16 +83,17 @@ ResultQ             QUEUE
 StartTime           LONG
 EndTime             LONG
 Elapsed             DECIMAL(10,2)  !For computing time
-SQLQueryText        CSTRING(2001)  !The query that you type in
+SQLQueryText        CSTRING(50000) !The query that you type in
 Columns             LONG,DIM(20)   !For keeping track of the text length for column sizing
 Characters          LONG           !For calculating column widths
 ResultColumns       LONG           !Number of result columns (maxes at 20 in this demo)
 ResultColumnsQ      QUEUE          !Result column names 
 ColumnName              CSTRING(61)
+DataType                CSTRING(61)
                     END
-ResultColumnsText   STRING(1000)   !Just for copying stuff to clipboard for pasting in query.
+ResultColumnsText   CSTRING(1000)  !Just for copying stuff to clipboard for pasting in query.
 IncludeColumnHeadings BYTE(TRUE)   !When copying to clipboard, option to include the labels
-
+IncludeDataType       BYTE(FALSE)
 Window              WINDOW('Simple SQLite Tester'),AT(,,454,217),CENTER,GRAY,IMM,SYSTEM,MAX, |
                         FONT('Segoe UI',9),RESIZE
                         PROMPT('SQL:'),AT(3,4),USE(?PROMPT1)
@@ -103,7 +105,6 @@ Window              WINDOW('Simple SQLite Tester'),AT(,,454,217),CENTER,GRAY,IMM
                         TEXT,AT(299,17,151,46),USE(ResultColumnsText),VSCROLL,COLOR(COLOR:BTNFACE), |
                             READONLY
                         PROMPT('Result:'),AT(3,56),USE(?ResultPrompt)
-                        BUTTON('Cl&ose'),AT(409,199,42,14),USE(?CloseButton),STD(STD:Close)
                         LIST,AT(4,67,446,128),USE(?SQLResultList),HIDE,HVSCROLL,FONT('Consolas',10), |
                             COLOR(COLOR:BTNFACE),FROM(ResultQ),FORMAT('20L(2)|M@s255@#2#20L(' & |
                             '2)|M@s255@20L(2)|M@s255@20L(2)|M@s255@20L(2)|M@s255@20L(2)|M@s2' & |
@@ -115,6 +116,8 @@ Window              WINDOW('Simple SQLite Tester'),AT(,,454,217),CENTER,GRAY,IMM
                             'Max 20 columns will display.'),AT(23,4,274),USE(?PROMPT2)
                         BUTTON('&Copy Result to Clipboard'),AT(3,199,95),USE(?CopyButton)
                         CHECK('Include Column Headings'),AT(103,201),USE(IncludeColumnHeadings)
+                        CHECK('Include Data Type'),AT(199,201),USE(IncludeDataType)
+                        BUTTON('Cl&ose'),AT(409,199,42,14),USE(?CloseButton),STD(STD:Close)
                     END
 
 c                   CLASS
@@ -182,24 +185,27 @@ InvalidateWindow        PROCEDURE                       !calls invalidaterect to
                 POST(EVENT:Sized)
             OF EVENT:Sized
                 0{PROP:Pixels} = TRUE
-                ?SQLQueryText{PROP:Width   } =  0{PROP:Width}  - ?ExecuteSQLButton{PROP:Width} - ?SQLQueryText{PROP:XPOS} - ?ResultColumnsText{PROP:Width} - 14
-                ?ExecuteSQLButton{PROP:XPos} =  0{PROP:Width}  - ?ExecuteSQLButton{PROP:Width} - ?ResultColumnsText{PROP:Width} - 10
-                ?ResultColumnsText{PROP:XPos} =  0{PROP:Width}  - ?ResultColumnsText{PROP:Width} - 8
-                ?ColumnsPrompt{PROP:XPos}    = ?ResultColumnsText{PROP:XPos}
-                ?SQLResultList{PROP:Width  } =  0{PROP:Width}  - ?SQLResultList{PROP:XPos}     - 8
-                ?SQLResultList{PROP:Height } =  0{PROP:Height} - 4 - ?SQLResultList{PROP:YPos} - ?CloseButton{PROP:Height}
-                ?CloseButton{PROP:XPos     } =  0{PROP:Width}  - ?CloseButton{PROP:Width}      - 4
-                ?CloseButton{PROP:YPos     } =  0{PROP:Height} - ?CloseButton{PROP:Height}     - 4
-                ?CopyButton{PROP:Ypos      } =  ?CloseButton{PROP:YPos}
-                ?IncludeColumnHeadings{PROP:YPos} = ?CloseButton{PROP:YPos} + 4
-                0{PROP:Pixels} = FALSE
+                ?SQLQueryText{PROP:Width        } =  0{PROP:Width}  - ?ExecuteSQLButton{PROP:Width} - ?SQLQueryText{PROP:XPOS} - ?ResultColumnsText{PROP:Width} - 14
+                ?ExecuteSQLButton{PROP:XPos     } =  0{PROP:Width}  - ?ExecuteSQLButton{PROP:Width} - ?ResultColumnsText{PROP:Width} - 10
+                ?ResultColumnsText{PROP:XPos    } =  0{PROP:Width}  - ?ResultColumnsText{PROP:Width} - 8
+                ?ColumnsPrompt{PROP:XPos        } =  ?ResultColumnsText{PROP:XPos}
+                ?SQLResultList{PROP:Width       } =  0{PROP:Width}  - ?SQLResultList{PROP:XPos}     - 8
+                ?SQLResultList{PROP:Height      } =  0{PROP:Height} - 4 - ?SQLResultList{PROP:YPos} - ?CloseButton{PROP:Height}
+                ?CloseButton{PROP:XPos          } =  0{PROP:Width}  - ?CloseButton{PROP:Width}      - 4
+                ?CloseButton{PROP:YPos          } =  0{PROP:Height} - ?CloseButton{PROP:Height}     - 4
+                ?CopyButton{PROP:Ypos           } =  ?CloseButton{PROP:YPos}
+                ?IncludeColumnHeadings{PROP:YPos} =  ?CloseButton{PROP:YPos} + 4
+                ?IncludeDataType{PROP:Ypos      } =  ?IncludeColumnHeadings{PROP:YPos}
+                0{PROP:Pixels                   } =  FALSE
                 IF 0{PROP:Hide} = TRUE
-                    0{PROP:Hide} = FALSE
+                    0{PROP:Hide} =  FALSE
                 END
                 c.InvalidateWindow
             END
             
             CASE ACCEPTED()
+            OF ?IncludeDataType
+                POST(EVENT:Accepted,?ExecuteSQLButton)
             OF ?CopyButton !Loop through queue and generate an Excel Friendly thing you can paste. NOTE: Should probably strip out TABS if present in data or this will break.
                 ClipboardSS.SetLen(0)
                 IF IncludeColumnHeadings !Process Column Headings
@@ -250,37 +256,29 @@ InvalidateWindow        PROCEDURE                       !calls invalidaterect to
                         FREE(ResultColumnsQ)
                         ResultColumnsText = ''
                         IF NOT c.CheckError('Error Creating Dummy')
-                            MyTurbo{PROP:SQL} = 'SELECT SQL FROM mem.sqlite_master WHERE name = "' & SPECIAL_DUMMY_TABLE & '"' !Now checking mem.sqlite_master for our created table
+                            MyTurbo{PROP:SQL} = 'PRAGMA mem.table_info(' & SPECIAL_DUMMY_TABLE & ')'
                             IF NOT c.CheckError('Error Selecting Dummy SQL')
-                                NEXT(MyTurbo)
-                                IF NOT ERRORCODE()
-                                    SS.Append(MyTurbo:F1) !Getting ready for some parsing
-                                    SS.Split('(')         !We want all of the stuff after the first paren
-                                    SS2 &= SS.GetLine(2)  !So we'll get the 2nd line after the split
-                                    SS.SetLen(0)          !Clear out our original SystemString object
-                                    SS.Append(SS2.GetString()) !And add the parsed string to it
-                                    SS.Split(')')         !Now getting the stuff to the left of the right paren
-                                    SS2 &= SS.GetLine(1)  !Get the first line
-                                    SS.SetLen(0)          !Clear out original SystemString object again
-                                    IF NOT SS2 &= NULL
-                                        SS.Append(SS2.GetString()) !And now we have the stuff in between the parens
+                                LOOP
+                                    NEXT(MyTurbo)
+                                    IF ERRORCODE()
+                                        BREAK
                                     END
-                                    ResultColumnsText = SS.GetString()
-                                    SS.ReplaceInContent('<10>','') !Kill the CRLF
-                                    SS.ReplaceInContent('<13>','') 
-                                    SS.Split(',')                  !Now get the column names/types in between the commas and send to the queue to use below
-                                    ResultColumns = SS.GetLinesCount()
-                                    IF ResultColumns > MAXIMUM(Columns,1)
-                                        ResultColumns = MAXIMUM(Columns,1)
-                                    END                                    
-                                    LOOP ColumnNdx = 1 TO ResultColumns !Now we'll fill ResultColumnsQ
-                                        SS2 &= SS.GetLine(ColumnNdx)
-                                        IF NOT SS2 &= NULL
-                                            ResultColumnsQ.ColumnName = CLIP(LEFT(SS2.GetString()))
-                                            ADD(ResultColumnsQ)
-                                        END
-                                    END                                    
+                                    ResultColumnsQ.ColumnName = MyTurbo:F2
+                                    ResultColumnsQ.DataType   = MyTurbo:F3
+                                    ADD(ResultColumnsQ)
+                                    ResultColumnsText = ResultColumnsText & ResultColumnsQ.ColumnName 
+                                    IF IncludeDataType
+                                        ResultColumnsText = ResultColumnsText & ' ' & ResultColumnsQ.DataType
+                                    END
+                                    ResultColumnsText = ResultColumnsText & '<13,10>'
                                 END
+                                
+                                ResultColumns = RECORDS(ResultColumnsQ)
+                                IF ResultColumns > MAXIMUM(Columns,1)
+                                    ResultColumns = MAXIMUM(Columns,1)
+                                END 
+                                DISPLAY(?ResultColumnsText)
+                                    
                             END
                         END
                         DISPLAY(?ResultColumnsText)
@@ -302,7 +300,7 @@ InvalidateWindow        PROCEDURE                       !calls invalidaterect to
                     CLEAR(ResultColumnsQ)
                     GET(ResultColumnsQ,ColumnNdx)
                     IF NOT ERRORCODE()
-                        ?SQLResultList{PROPList:Header,ColumnNdx} = ResultColumnsQ.ColumnName
+                        ?SQLResultList{PROPList:Header,ColumnNdx} = ResultColumnsQ.ColumnName & CHOOSE(IncludeDataType=TRUE, '<10>' & ResultColumnsQ.DataType,'')
                     END
                     
                     IF Characters < LEN(ResultColumnsQ.ColumnName) !If header text is bigger than the data
