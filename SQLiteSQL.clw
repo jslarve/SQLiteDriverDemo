@@ -1,5 +1,6 @@
                     PROGRAM
 
+!Updated 2020.06.13 - Increased the query size, improved some of the error checking and column sizing. Works better now if you do a query such as 'PRAGMA database_list'.
 !Updated 2020.06.12 - Used PRAGMA table_info to get the column information instead of parsing the create() statement. Added an option to include data type.
 
     INCLUDE('KEYCODES.CLW'),ONCE
@@ -83,7 +84,7 @@ ResultQ             QUEUE
 StartTime           LONG
 EndTime             LONG
 Elapsed             DECIMAL(10,2)  !For computing time
-SQLQueryText        CSTRING(50000) !The query that you type in
+SQLQueryText        CSTRING(350000)!The query that you type in
 Columns             LONG,DIM(20)   !For keeping track of the text length for column sizing
 Characters          LONG           !For calculating column widths
 ResultColumns       LONG           !Number of result columns (maxes at 20 in this demo)
@@ -97,12 +98,12 @@ IncludeDataType       BYTE(FALSE)
 Window              WINDOW('Simple SQLite Tester'),AT(,,454,217),CENTER,GRAY,IMM,SYSTEM,MAX, |
                         FONT('Segoe UI',9),RESIZE
                         PROMPT('SQL:'),AT(3,4),USE(?PROMPT1)
-                        TEXT,AT(4,17,271,35),USE(SQLQueryText),VSCROLL,FONT('Consolas',10), |
+                        TEXT,AT(4,17,302,35),USE(SQLQueryText),VSCROLL,FONT('Consolas',10), |
                             ALRT(CtrlEnter)
-                        BUTTON,AT(279,17,17,15),USE(?ExecuteSQLButton),KEY(F8Key),ICON(ICON:VCRplay), |
+                        BUTTON,AT(309,17,17,15),USE(?ExecuteSQLButton),KEY(F8Key),ICON(ICON:VCRplay), |
                             TIP('Execute Query (or at least try) - [F8]')
                         PROMPT('Result Columns for Copying:'),AT(299,4,102),USE(?ColumnsPrompt)
-                        TEXT,AT(299,17,151,46),USE(ResultColumnsText),VSCROLL,COLOR(COLOR:BTNFACE), |
+                        TEXT,AT(330,17,120,46),USE(ResultColumnsText),VSCROLL,COLOR(COLOR:BTNFACE), |
                             READONLY
                         PROMPT('Result:'),AT(3,56),USE(?ResultPrompt)
                         LIST,AT(4,67,446,128),USE(?SQLResultList),HIDE,HVSCROLL,FONT('Consolas',10), |
@@ -114,9 +115,13 @@ Window              WINDOW('Simple SQLite Tester'),AT(,,454,217),CENTER,GRAY,IMM
                             '2)|M@s255@')
                         PROMPT('Press F8 or click the button to the right to execute SQL query. ' & |
                             'Max 20 columns will display.'),AT(23,4,274),USE(?PROMPT2)
-                        BUTTON('&Copy Result to Clipboard'),AT(3,199,95),USE(?CopyButton)
-                        CHECK('Include Column Headings'),AT(103,201),USE(IncludeColumnHeadings)
-                        CHECK('Include Data Type'),AT(199,201),USE(IncludeDataType)
+                        BUTTON('&Copy Result to Clipboard'),AT(3,199,95),USE(?CopyButton), |
+                            TIP('Copy to clipboard (Excel Friendly, unless there are tabs in' & |
+                            ' the data :-) )')
+                        CHECK('Include Column Headings'),AT(103,201),USE(IncludeColumnHeadings), |
+                            TIP('Include column headings in the clipboard export.')
+                        CHECK('Include Data Type'),AT(199,201),USE(IncludeDataType),TIP('Include' & |
+                            ' the data type on the displayed column headers')
                         BUTTON('Cl&ose'),AT(409,199,42,14),USE(?CloseButton),STD(STD:Close)
                     END
 
@@ -137,6 +142,8 @@ InvalidateWindow        PROCEDURE                       !calls invalidaterect to
             IF c.CheckError('Error on Open')
                 RETURN
             END
+        ELSE
+            RETURN
         END
         MyTurbo{PROP:SQL} = 'ATTACH '':memory:'' AS Mem'             !This is the magic for using in-Memory with the SQLite driver
         IF c.CheckError('Error on ATTACH')
@@ -233,12 +240,18 @@ InvalidateWindow        PROCEDURE                       !calls invalidaterect to
                 SETCLIPBOARD(ClipboardSS.GetString())
             OF ?ExecuteSQLButton 
                 UPDATE(?SQLQueryText) !Just in case, we'll update the data from the control.
-                HIDE(?SQLResultList)
-                MyTurbo{PROP:SQL} = SQLQueryText !Execute SQL
-                IF ERRORCODE()
-                    MESSAGE(FILEERROR())
-                END               
                 FREE(ResultQ)                    !We'll process the results into the result queue
+                CLEAR(ResultQ)
+                DISPLAY(?SQLResultList)
+                MyTurbo{PROP:SQL} = SQLQueryText !Execute SQL
+                IF ERRORCODE() = 33
+                    MESSAGE('No Results to Display')
+                ELSE                    
+                    IF c.CheckError('Executing Query') 
+                    END
+                END
+                
+                HIDE(?SQLResultList)
                 LOOP
                     CLEAR(MyTurbo:RECORD)                        
                     NEXT(MyTurbo)
@@ -257,7 +270,7 @@ InvalidateWindow        PROCEDURE                       !calls invalidaterect to
                         ResultColumnsText = ''
                         IF NOT c.CheckError('Error Creating Dummy')
                             MyTurbo{PROP:SQL} = 'PRAGMA mem.table_info(' & SPECIAL_DUMMY_TABLE & ')'
-                            IF NOT c.CheckError('Error Selecting Dummy SQL')
+                            IF NOT ERRORCODE()!c.CheckError('Error Selecting Dummy SQL')
                                 LOOP
                                     NEXT(MyTurbo)
                                     IF ERRORCODE()
@@ -286,14 +299,19 @@ InvalidateWindow        PROCEDURE                       !calls invalidaterect to
                 END
                     
                 CLEAR(Columns)
-                LOOP Ndx = 1 TO RECORDS(ResultQ) !attempting to get text width of each column
-                    GET(ResultQ,Ndx)
-                    LOOP ColumnNdx = 1 TO MAXIMUM(Columns,1) !Checking the widths of the data in each column of row
-                        IF LEN(CLIP(WHAT(ResultQ,ColumnNdx+1))) > Columns[ColumnNdx]
-                            Columns[ColumnNdx] = LEN(CLIP(WHAT(ResultQ,ColumnNdx+1))) !Setting new max widths
+                IF RECORDS(ResultQ)
+                    LOOP Ndx = 1 TO RECORDS(ResultQ) !attempting to get text width of each column
+                        GET(ResultQ,Ndx)
+                        LOOP ColumnNdx = 1 TO MAXIMUM(Columns,1) !Checking the widths of the data in each column of row
+                            IF LEN(CLIP(WHAT(ResultQ,ColumnNdx+1))) > Columns[ColumnNdx]
+                                Columns[ColumnNdx] = LEN(CLIP(WHAT(ResultQ,ColumnNdx+1))) + 1 !Setting new max widths
+                            END
                         END
                     END
+                ELSE
+                    FREE(ResultColumnsQ)
                 END
+                
                 0{PROP:Pixels} = TRUE !So that the column widths can be set more accurately
                 LOOP ColumnNdx = 1 TO MAXIMUM(Columns,1)
                     Characters = Columns[ColumnNdx] !Getting number of characters 
@@ -301,6 +319,8 @@ InvalidateWindow        PROCEDURE                       !calls invalidaterect to
                     GET(ResultColumnsQ,ColumnNdx)
                     IF NOT ERRORCODE()
                         ?SQLResultList{PROPList:Header,ColumnNdx} = ResultColumnsQ.ColumnName & CHOOSE(IncludeDataType=TRUE, '<10>' & ResultColumnsQ.DataType,'')
+                    ELSE
+                        ?SQLResultList{PROPList:Header,ColumnNdx} = ''
                     END
                     
                     IF Characters < LEN(ResultColumnsQ.ColumnName) !If header text is bigger than the data
@@ -323,7 +343,7 @@ c.CheckError        PROCEDURE(STRING pMessage)
     CODE
 !        
         IF ERRORCODE()
-            MESSAGE(ERROR() & '|' & FILEERROR(),pMessage) 
+            MESSAGE(ERRORCODE() & ' ' & FILEERRORCODE() & '|' & ERROR() & '|' & FILEERROR(),pMessage) 
             RETURN ERRORCODE()
         END
         RETURN 0
