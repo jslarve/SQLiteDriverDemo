@@ -1,5 +1,5 @@
 # SQLiteDriverDemo
-Sample Application for using Clarion's SQLite Driver for in-Memory Tables
+## Sample Application for using Clarion's SQLite Driver for in-Memory Tables
 
 This was created in Clarion 11, but might also work as far back as Clarion 9.
 
@@ -8,3 +8,6 @@ Create.mem.Data.sql is the CREATE TABLE statement.
 mem.Data.sql is the INSERT of 500 rows of data.
 
 There is a max of 500 inserts that you can do in one SQLite command. But you can do multiple executions to get more data in there.
+
+NOTE: This demo ships with a newer version of sqlite than ships with Clarion. The shipping one will still work, but it's from 2012 and there are a lot more features in the newest.
+

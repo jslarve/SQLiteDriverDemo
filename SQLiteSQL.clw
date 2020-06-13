@@ -6,8 +6,8 @@
     INCLUDE('KEYCODES.CLW'),ONCE
     INCLUDE('SystemString.inc'),ONCE   
 
-SS                  SystemStringClass  !Note. I normally use StringTheory in development, but wanted non-StringTheory users to be able to test this out.
-ClipboardSS         SystemStringClass
+SS                  SystemStringClass  !Utility for manipulating strings, loading files, executing sql
+ClipboardSS         SystemStringClass  !For building an Excel friendly string to copy to the clipboard.
 
     OMIT('***')
  * Created with Clarion 11.0
@@ -38,8 +38,8 @@ ClipboardSS         SystemStringClass
 !SOFTWARE.
  ***
 
-Ndx                 LONG
-ColumnNdx           LONG
+Ndx                 LONG  !Generic counter
+ColumnNdx           LONG  !Counter for processing through columns
 
 TURBO_FIELD_SIZE    EQUATE(2001) !Field size within the MyTurbo table. Set to suit your needs for accomodating your query results.
 SPECIAL_DUMMY_TABLE EQUATE('DummyTable123xyz') !Random name to try not to collide. This table gets created in memory.
@@ -90,7 +90,7 @@ Characters          LONG           !For calculating column widths
 ResultColumns       LONG           !Number of result columns (maxes at 20 in this demo)
 ResultColumnsQ      QUEUE          !Result column names 
 ColumnName              CSTRING(61)
-DataType                CSTRING(61)
+DataType                CSTRING(61) 
                     END
 ResultColumnsText   CSTRING(1000)  !Just for copying stuff to clipboard for pasting in query.
 IncludeColumnHeadings BYTE(TRUE)   !When copying to clipboard, option to include the labels
@@ -175,7 +175,7 @@ InvalidateWindow        PROCEDURE                       !calls invalidaterect to
         
         OPEN(Window)
         0{PROP:Hide} = TRUE
-        SQLQueryText = 'SELECT * FROM mem.Data WHERE slang LIKE("%data%")' !Now we'll filter a subset of rows.
+        SQLQueryText = 'SELECT * FROM mem.Data WHERE slang LIKE("%data%")<13,10>--This query shows all rows that have "data" within the "Slang" column.<13,10>--Try a query of your own and press Ctrl+Enter or F8 to execute.' !Now we'll filter a subset of rows.
         ACCEPT
             CASE EVENT()
             OF EVENT:AlertKey
