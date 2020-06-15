@@ -1,13 +1,12 @@
                     PROGRAM
 
+!Updated 2020.06.14 - testing scope and lifetime using threads. Thanks a whole lot to Federico Navarro for the tips on using :Memory: and for creating the test window.
 !Updated 2020.06.13 - Increased the query size, improved some of the error checking and column sizing. Works better now if you do a query such as 'PRAGMA database_list'.
 !Updated 2020.06.12 - Used PRAGMA table_info to get the column information instead of parsing the create() statement. Added an option to include data type.
 
     INCLUDE('KEYCODES.CLW'),ONCE
     INCLUDE('SystemString.inc'),ONCE   
 
-SS                  SystemStringClass  !Utility for manipulating strings, loading files, executing sql
-ClipboardSS         SystemStringClass  !For building an Excel friendly string to copy to the clipboard.
 
     OMIT('***')
  * Created with Clarion 11.0
@@ -38,21 +37,20 @@ ClipboardSS         SystemStringClass  !For building an Excel friendly string to
 !SOFTWARE.
  ***
 
-Ndx                 LONG  !Generic counter
-ColumnNdx           LONG  !Counter for processing through columns
-
-TURBO_FIELD_SIZE    EQUATE(2001) !Field size within the MyTurbo table. Set to suit your needs for accomodating your query results.
-SPECIAL_DUMMY_TABLE EQUATE('DummyTable123xyz') !Random name to try not to collide. This table gets created in memory.
-
                     MAP
+                        SqliteTest(STRING pQuery)
                         MODULE('')
                             InvalidateRect(ulong, LONG, UNSIGNED),PASCAL !To help clear artifacts on resize
                         END
                     END
-        
+
+TURBO_FIELD_SIZE    EQUATE(2001) !Field size within the MyTurbo table. Set to suit your needs for accomodating your query results.
+SPECIAL_DUMMY_TABLE EQUATE('DummyTable123xyz') !Random name to try not to collide. This table gets created in memory.
+DEFAULT_QUERY       EQUATE('SELECT * FROM mem.Data WHERE slang LIKE("%data%")<13,10>--This query shows all rows that have "data" within the "Slang" column.<13,10>--Try a query of your own and press Ctrl+Enter or F8 to execute.')
+
 DummyDBOwner        STRING(FILE:MaxFilePath+1) !Just a filename for a dummy SQLite table. Could be created under %TEMP% or something.
 
-MyTurbo             FILE,DRIVER('SQLite','/TURBOSQL=TRUE'),PRE(MyTurbo),OWNER(DummyDBOwner),CREATE !Just a dummy table, but it ain't no dummy.
+MyTurbo             FILE,DRIVER('SQLite','/TURBOSQL=TRUE'),THREAD,PRE(MyTurbo),OWNER(DummyDBOwner),CREATE !Just a dummy table, but it ain't no dummy.
 RECORD                  RECORD
 F1                          CSTRING(TURBO_FIELD_SIZE)
 F2                          CSTRING(TURBO_FIELD_SIZE)
@@ -77,6 +75,118 @@ F20                         CSTRING(TURBO_FIELD_SIZE)
                         END !Add as many columns here as you need, but other things might need updating to support it.
                     END
 
+
+c                   CLASS
+CheckError              PROCEDURE(STRING pMessage),LONG !Generic error handler
+InvalidateWindow        PROCEDURE                       !calls invalidaterect to refresh window on resize
+                    END
+
+MainWindow          WINDOW('Simple SQLite Tester Main Window'),AT(,,261,247),GRAY,SYSTEM, |
+                        FONT('Segoe UI',9)
+                        PROMPT('SQLiteDB file or :memory:    (Owner ID)'),AT(5,3,159), |
+                            USE(?DBOwnerPrompt)
+                        ENTRY(@s100),AT(5,14,235,9),USE(DummyDBOwner)
+                        BUTTON,AT(243,12,14,12),USE(?LookupFileButton),ICON('openfold.ico')
+                        BUTTON('&Test on Main Thread'),AT(5,27,50,20),USE(?TestButton)
+                        STRING('SQLiteTest(''Query'') !Call SQLiteTest Procedure'),AT(63,33,191), |
+                            USE(?TestOnMainThreadString),FONT('Consolas')
+                        BUTTON('&Test on New Thread'),AT(5,52,50,20),USE(?TestNTButton)
+                        STRING('START(SQLiteTest,25000,''Query'')'),AT(63,59,191,9),USE(?TestOnMainThreadString:2) |
+                            ,FONT('Consolas')
+                        BUTTON('&Create DB && Dummy Table'),AT(5,76,50,20),USE(?CreateDBButton)
+                        STRING('CREATE(MyTurbo) !Not needed for :memory:'),AT(63,82,191,9), |
+                            USE(?TestOnMainThreadString:3),FONT('Consolas')
+                        BUTTON('&Create blank SqliteDB'),AT(5,101,50,20),USE(?CreateDBPropertyButton)
+                        STRING('MyTurbo{{PROP:CreateDB} !Not needed for :memory:'),AT(63,107,191,9), |
+                            USE(?TestOnMainThreadString:4),FONT('Consolas')
+                        BUTTON('&Open File on Main Thread'),AT(5,125,50,20),USE(?OpenFileButton)
+                        STRING('OPEN(MyTurbo)'),AT(63,133,191,9),USE(?TestOnMainThreadString:5), |
+                            FONT('Consolas')
+                        BUTTON('&Close File on Main Thread'),AT(5,150,50,20),USE(?CloseFileButton)
+                        STRING('CLOSE(MyTurbo)'),AT(63,156,191,9),USE(?TestOnMainThreadString:6), |
+                            FONT('Consolas')
+                        BUTTON('&Disconnect DB'),AT(5,174,50,20),USE(?DisconnectButton)
+                        STRING('MyTurbo{{PROP:Disconnect}'),AT(63,182,191,9),USE(?TestOnMainThreadString:7) |
+                            ,FONT('Consolas')
+                        BUTTON('Database &List'),AT(5,198,50,20),USE(?DatabaseListButton)
+                        BUTTON('&Quit'),AT(5,222,50,20),USE(?QuitButton)
+                        STRING('START(SQLiteTest,25000,''PRAGMA Database_List'')'),AT(63,203,191,9), |
+                            USE(?TestOnMainThreadString:8),FONT('Consolas')
+                    END
+
+ThreadCounter       LONG
+
+    CODE
+
+        DummyDBOwner = ':memory:' ! Per Federico Navarro, and it works!
+        OPEN(MainWindow)
+        ACCEPT
+            CASE EVENT()
+            OF EVENT:CloseWindow
+                LOOP ThreadCounter = 2 TO 64 !Some quickie code to close threads. Will re-visit later.
+                    POST(EVENT:CloseWindow,,ThreadCounter)
+                    YIELD()
+                END
+            END
+            
+            CASE ACCEPTED()
+            OF ?LookupFileButton
+                IF LOWER(CLIP(DummyDBOwner)) = ':memory:'
+                    DummyDBOwner = '' !So that file dialog will actually work
+                END                
+                IF FILEDIALOG('Select Database',DummyDBOwner,'*.*',FILE:LongName+FILE:KeepDir)
+                ELSE
+                    IF NOT DummyDBOwner
+                        DummyDBOwner = ':memory:'
+                    END
+                END                
+                SELECT(?DummyDBOwner)
+                DISPLAY(?DummyDBOwner)                
+            OF ?TestButton
+                SQLiteTest(DEFAULT_QUERY)
+            OF ?TestNTButton
+                START(SQLiteTest,25000,DEFAULT_QUERY)
+            OF ?CreateDBButton
+                !not needed for :memory:
+                CREATE(MyTurbo) 
+                IF c.CheckError('Error on Create')
+                END
+            OF ?CreateDBPropertyButton
+                !not needed for :memory:
+                MyTurbo{PROP:CreateDB}
+                IF c.CheckError('Error on CreateDB')
+                END
+            OF ?OpenFileButton
+                OPEN(MyTurbo)
+                IF c.CheckError('Error on Open')
+                END
+            OF ?CloseFileButton
+                CLOSE(MyTurbo)
+                IF c.CheckError('Error on Close')
+                END
+            OF ?DisconnectButton
+                MyTurbo{PROP:Disconnect}
+                IF c.CheckError('Error on Disconnect')
+                END
+            OF ?DatabaseListButton
+                START(SQLiteTest,25000,'PRAGMA Database_List<13,10>--See database list below. Also checkout these other queries<13,10>--SELECT * FROM mem.sqlite_master<13,10>--SELECT * FROM main.sqlite_master')
+            OF ?QuitButton
+                POST(EVENT:CloseWindow)
+            END
+        END
+        CLOSE(MainWindow)
+
+        
+SQLiteTest          PROCEDURE(STRING pQuery)
+
+SS                  SystemStringClass  !Utility for manipulating strings, loading files, executing sql
+ClipboardSS         SystemStringClass  !For building an Excel friendly string to copy to the clipboard.
+
+Ndx                 LONG  !Generic counter
+ColumnNdx           LONG  !Counter for processing through columns
+
+
+
 ResultQ             QUEUE
                         LIKE(MyTurbo:Record)
                     END
@@ -94,7 +204,9 @@ DataType                CSTRING(61)
                     END
 ResultColumnsText   CSTRING(1000)  !Just for copying stuff to clipboard for pasting in query.
 IncludeColumnHeadings BYTE(TRUE)   !When copying to clipboard, option to include the labels
-IncludeDataType       BYTE(FALSE)
+IncludeDataType         BYTE(FALSE)
+DBOpened         BYTE(FALSE)
+
 Window              WINDOW('Simple SQLite Tester'),AT(,,454,217),CENTER,GRAY,IMM,SYSTEM,MAX, |
                         FONT('Segoe UI',9),RESIZE
                         PROMPT('SQL:'),AT(3,4),USE(?PROMPT1)
@@ -125,26 +237,34 @@ Window              WINDOW('Simple SQLite Tester'),AT(,,454,217),CENTER,GRAY,IMM
                         BUTTON('Cl&ose'),AT(409,199,42,14),USE(?CloseButton),STD(STD:Close)
                     END
 
-c                   CLASS
-CheckError              PROCEDURE(STRING pMessage),LONG !Generic error handler
-InvalidateWindow        PROCEDURE                       !calls invalidaterect to refresh window on resize
-                    END
-
+WindowText              CSTRING(201)
 
     CODE
-        
-        DummyDBOwner = '.\Dummy.sqlite' !This could go in the user's temp folder with a temp name.
-        CREATE(MyTurbo) !Seems to require a database file, even if we don't use it. 
-        !This CREATE would not be necessary if there was an existing database file. This is just for demo porpoises.
-        !Always code from a safe distance and sanitize your keyboard and mouse.
-        IF NOT c.CheckError('Error on Create')
-            OPEN(MyTurbo)  !Here we go
-            IF c.CheckError('Error on Open')
-                RETURN
-            END
-        ELSE
-            RETURN
+        OPEN(MyTurbo)
+        IF c.CheckError('Error on Open')
+          !RETURN
+        ELSE 
+          DBOpened = True
         END
+!        CREATE(MyTurbo) !Seems to require a database file, even if we don't use it. 
+!        !This CREATE would not be necessary if there was an existing database file. This is just for demo porpoises.
+!        !Always code from a safe distance and sanitize your keyboard and mouse.
+!        IF NOT c.CheckError('Error on Create')
+!            OPEN(MyTurbo)  !Here we go
+!            IF c.CheckError('Error on Open')
+!                RETURN
+!            END
+!        ELSE
+!            RETURN
+!        END
+      MyTurbo{PROP:SQL} = 'SELECT COUNT(*) FROM mem.sqlite_master WHERE type = "table" and name = "' & SPECIAL_DUMMY_TABLE & '"' !Now checking mem.sqlite_master for our created table
+      NEXT(MyTurbo)
+      IF NOT ERRORCODE()
+        !MESSAGE('Reusing existing memory table ' & MyTurbo:F1 & ' definition row/s','SQLite In Memory Demo')
+          WindowText = 'Simple SQLite Tester - [Using Pre-loaded Data]'
+      ELSE
+        !this is kept for reusing Mem prefix, but duplicates internal structures
+        !using both with DummyDBOwner :memory:
         MyTurbo{PROP:SQL} = 'ATTACH '':memory:'' AS Mem'             !This is the magic for using in-Memory with the SQLite driver
         IF c.CheckError('Error on ATTACH')
             RETURN
@@ -168,14 +288,17 @@ InvalidateWindow        PROCEDURE                       !calls invalidaterect to
         IF c.CheckError('RECORDS() Error')
             RETURN
         ELSE
-            MESSAGE('Elapsed Time to Load ' & MyTurbo:F1 & ' rows: ' & Elapsed & ' secs.||Note: The apparent limit for a single INSERT command is 500 rows,|so you''d need to construct multiple INSERT statements or load|the table from an existing SQLite table.','SQLite In Memory Demo')
+            !MESSAGE('Elapsed Time to Load ' & MyTurbo:F1 & ' rows: ' & Elapsed & ' secs.||Note: The apparent limit for a single INSERT command is 500 rows,|so you''d need to construct multiple INSERT statements or load|the table from an existing SQLite table.','SQLite In Memory Demo')
+            WindowText = 'Simple SQLite Tester - [Loaded ' & MyTurbo:F1 & ' rows in ' & Elapsed & ' secs.]'
         END
         
         SS.SetLen(0)                                                 !Clear out SystemString
+      END
         
         OPEN(Window)
         0{PROP:Hide} = TRUE
-        SQLQueryText = 'SELECT * FROM mem.Data WHERE slang LIKE("%data%")<13,10>--This query shows all rows that have "data" within the "Slang" column.<13,10>--Try a query of your own and press Ctrl+Enter or F8 to execute.' !Now we'll filter a subset of rows.
+        0{PROP:Text} = WindowText
+        SQLQueryText = pQuery
         ACCEPT
             CASE EVENT()
             OF EVENT:AlertKey
@@ -186,7 +309,6 @@ InvalidateWindow        PROCEDURE                       !calls invalidaterect to
                         POST(EVENT:Accepted,?ExecuteSQLButton)
                     END                    
                 END
-                
             OF EVENT:OpenWindow
                 POST(EVENT:Accepted,?ExecuteSQLButton) !We'll run the default query on startup
                 POST(EVENT:Sized)
@@ -197,7 +319,7 @@ InvalidateWindow        PROCEDURE                       !calls invalidaterect to
                 ?ResultColumnsText{PROP:XPos    } =  0{PROP:Width}  - ?ResultColumnsText{PROP:Width} - 8
                 ?ColumnsPrompt{PROP:XPos        } =  ?ResultColumnsText{PROP:XPos}
                 ?SQLResultList{PROP:Width       } =  0{PROP:Width}  - ?SQLResultList{PROP:XPos}     - 8
-                ?SQLResultList{PROP:Height      } =  0{PROP:Height} - 4 - ?SQLResultList{PROP:YPos} - ?CloseButton{PROP:Height}
+                ?SQLResultList{PROP:Height      } =  0{PROP:Height} -  ?SQLResultList{PROP:YPos} - ?CloseButton{PROP:Height} - 8
                 ?CloseButton{PROP:XPos          } =  0{PROP:Width}  - ?CloseButton{PROP:Width}      - 4
                 ?CloseButton{PROP:YPos          } =  0{PROP:Height} - ?CloseButton{PROP:Height}     - 4
                 ?CopyButton{PROP:Ypos           } =  ?CloseButton{PROP:YPos}
@@ -335,7 +457,9 @@ InvalidateWindow        PROCEDURE                       !calls invalidaterect to
                 DISPLAY
             END
         END
-        CLOSE(MyTurbo)
+        IF DBOpened 
+            CLOSE(MyTurbo)
+        END
         CLOSE(Window)
     
 c.CheckError        PROCEDURE(STRING pMessage)
