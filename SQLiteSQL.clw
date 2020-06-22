@@ -1,5 +1,6 @@
                     PROGRAM
 
+!Updated 2020.06.22 - Minor cosmetic changes - Also loading a pre-built SQLIte db into memory instead of using INSERT script. You can load a whole lot of data very quickly.
 !Updated 2020.06.14 - testing scope and lifetime using threads. Thanks a whole lot to Federico Navarro for the tips on using :Memory: and for creating the test window.
 !Updated 2020.06.13 - Increased the query size, improved some of the error checking and column sizing. Works better now if you do a query such as 'PRAGMA database_list'.
 !Updated 2020.06.12 - Used PRAGMA table_info to get the column information instead of parsing the create() statement. Added an option to include data type.
@@ -208,9 +209,9 @@ IncludeDataType         BYTE(FALSE)
 DBOpened         BYTE(FALSE)
 
 Window              WINDOW('Simple SQLite Tester'),AT(,,454,217),CENTER,GRAY,IMM,SYSTEM,MAX, |
-                        FONT('Segoe UI',9),RESIZE
+                        FONT('Segoe UI',12),RESIZE
                         PROMPT('SQL:'),AT(3,4),USE(?PROMPT1)
-                        TEXT,AT(4,17,302,35),USE(SQLQueryText),VSCROLL,FONT('Consolas',10), |
+                        TEXT,AT(4,17,302,35),USE(SQLQueryText),VSCROLL,FONT('Consolas',11), |
                             ALRT(CtrlEnter)
                         BUTTON,AT(309,17,17,15),USE(?ExecuteSQLButton),KEY(F8Key),ICON(ICON:VCRplay), |
                             TIP('Execute Query (or at least try) - [F8]')
@@ -246,17 +247,6 @@ WindowText              CSTRING(201)
         ELSE 
           DBOpened = True
         END
-!        CREATE(MyTurbo) !Seems to require a database file, even if we don't use it. 
-!        !This CREATE would not be necessary if there was an existing database file. This is just for demo porpoises.
-!        !Always code from a safe distance and sanitize your keyboard and mouse.
-!        IF NOT c.CheckError('Error on Create')
-!            OPEN(MyTurbo)  !Here we go
-!            IF c.CheckError('Error on Open')
-!                RETURN
-!            END
-!        ELSE
-!            RETURN
-!        END
       MyTurbo{PROP:SQL} = 'SELECT COUNT(*) FROM mem.sqlite_master WHERE type = "table" and name = "' & SPECIAL_DUMMY_TABLE & '"' !Now checking mem.sqlite_master for our created table
       NEXT(MyTurbo)
       IF NOT ERRORCODE()
@@ -275,21 +265,34 @@ WindowText              CSTRING(201)
             RETURN
         END
         SS.SetLen(0)                                                 !Clearing out the SystemString object for next use. 
-        SS.FromFile('.\mem.Data.sql')                                !Load the INSERT INTO sql into SystemString object
+!        SS.FromFile('.\mem.Data.sql')                                !Load the INSERT INTO sql into SystemString object
+!        StartTime = CLOCK()                                          !Get the start time
+!        MyTurbo{PROP:SQL} = SS.GetString()                           !Execute the INSERT
+!        IF c.CheckError('INSERT Statement')
+!            RETURN
+!        END
         StartTime = CLOCK()                                          !Get the start time
-        MyTurbo{PROP:SQL} = SS.GetString()                           !Execute the INSERT
-        IF c.CheckError('INSERT Statement')
+        MyTurbo{PROP:SQL} = 'ATTACH ".\MockData.db" as MockData'     !Open the MockData database
+        IF c.CheckError('Error on ATTACH MockData')
+            RETURN
+        END
+        MyTurbo{PROP:SQL} = 'INSERT INTO mem.data SELECT * FROM MockData.data' !Load the data from Mockdata into memory.
+        IF c.CheckError('Insert from MockData')
             RETURN
         END
         EndTime = CLOCK()
+        MyTurbo{PROP:SQL} = 'DETACH MockData'                        !Detach from the database. We could leave it attached if desired, but we don't need it.
+        IF c.CheckError('Detach MockData')
+            RETURN
+        END
+            
         Elapsed = (EndTime - StartTime) *.01                         !Calculated elapsed time into a DECIMAL so it would format correctly in MESSAGE()
         MyTurbo{PROP:SQL} = 'SELECT COUNT(*) FROM Mem.Data'          !Getting the row count
         NEXT(MyTurbo)
         IF c.CheckError('RECORDS() Error')
             RETURN
         ELSE
-            !MESSAGE('Elapsed Time to Load ' & MyTurbo:F1 & ' rows: ' & Elapsed & ' secs.||Note: The apparent limit for a single INSERT command is 500 rows,|so you''d need to construct multiple INSERT statements or load|the table from an existing SQLite table.','SQLite In Memory Demo')
-            WindowText = 'Simple SQLite Tester - [Loaded ' & MyTurbo:F1 & ' rows in ' & Elapsed & ' secs.]'
+            WindowText = 'Simple SQLite Tester - [Loaded ' & MyTurbo:F1 & ' rows from .\MockData.db to :memory: in ' & Elapsed & ' secs.]'
         END
         
         SS.SetLen(0)                                                 !Clear out SystemString
